@@ -1,0 +1,24 @@
+# uv 虛擬環境
+.venv/
+
+
+# Python 快取
+__pycache__/
+*.py[cod]
+
+# API 擷取資料與執行紀錄
+data/
+logs/
+
+# 測試快取
+.pytest_cache/
+.coverage
+htmlcov/
+
+# 編輯器
+.vscode/
+.idea/
+
+# 作業系統檔案
+.DS_Store
+Thumbs.db
