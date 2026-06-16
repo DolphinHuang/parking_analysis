@@ -214,7 +214,6 @@ Copy-Item .env.example .env
 | `DB_PASSWORD` | 資料庫密碼 |
 | `DB_SSLMODE` | PostgreSQL SSL 模式 |
 
-`.env` 不應提交到 Git。
 
 本機執行 `uv run python -m collector.main` 時使用 `.env`。
 
