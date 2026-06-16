@@ -1,6 +1,11 @@
 # uv 虛擬環境
 .venv/
 
+# 環境變數
+.env
+.env.*
+!.env.example
+
 
 # Python 快取
 __pycache__/
@@ -9,11 +14,14 @@ __pycache__/
 # API 擷取資料與執行紀錄
 data/
 logs/
+*.log
 
 # 測試快取
 .pytest_cache/
 .coverage
 htmlcov/
+.mypy_cache/
+.ruff_cache/
 
 # 編輯器
 .vscode/

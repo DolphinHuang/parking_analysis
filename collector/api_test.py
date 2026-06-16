@@ -252,8 +252,8 @@ def fetch_api_data(
         response.headers.get("Content-Type", "未提供"),
     )
     logger.info(
-        "回傳大小：%,d bytes",
-        len(response.content),
+        "回傳大小：%s bytes",
+        f"{len(response.content):,}",
     )
     logger.info("最終 URL：%s", response.url)
 
@@ -502,15 +502,15 @@ def validate_records(
         )
 
         logger.info(
-            "有效座標：%,d / %,d",
-            int(valid_coordinates.sum()),
-            len(dataframe),
+            "有效座標：%s / %s",
+            f"{int(valid_coordinates.sum()):,}",
+            f"{len(dataframe):,}",
         )
 
         if not valid_coordinates.all():
             logger.warning(
-                "共有 %,d 筆座標無法解析或超出合理範圍。",
-                int((~valid_coordinates).sum()),
+                "共有 %s 筆座標無法解析或超出合理範圍。",
+                f"{int((~valid_coordinates).sum()):,}",
             )
 
     status_field = resolved_fields["status"]
@@ -524,9 +524,9 @@ def validate_records(
         valid_status = numeric_status.isin([0, 1, 2])
 
         logger.info(
-            "status 為 0、1、2：%,d / %,d",
-            int(valid_status.sum()),
-            len(dataframe),
+            "status 為 0、1、2：%s / %s",
+            f"{int(valid_status.sum()):,}",
+            f"{len(dataframe):,}",
         )
 
         print("\nstatus 原始值分布：")
@@ -549,8 +549,8 @@ def validate_records(
         )
 
         logger.info(
-            "本次回應中重複的 PS_ID：%,d 筆",
-            duplicate_count,
+            "本次回應中重複的 PS_ID：%s 筆",
+            f"{duplicate_count:,}",
         )
 
 
@@ -580,10 +580,9 @@ def print_sample_records(
 
 def save_results(
     payload: Any,
-    records: list[dict[str, Any]],
     collected_at: datetime,
     logger: logging.Logger,
-) -> tuple[Path, Path]:
+) -> Path:
     """
     保存第一次擷取結果。
 
@@ -602,11 +601,6 @@ def save_results(
         / f"taichung_parking_{timestamp_text}.json"
     )
 
-    csv_path = (
-        RAW_DATA_DIR
-        / f"taichung_parking_{timestamp_text}.csv"
-    )
-
     with json_path.open(
         mode="w",
         encoding="utf-8",
@@ -618,24 +612,9 @@ def save_results(
             indent=2,
         )
 
-    dataframe = pd.DataFrame(records)
-
-    dataframe.insert(
-        loc=0,
-        column="collected_at_utc",
-        value=collected_at.isoformat(),
-    )
-
-    dataframe.to_csv(
-        csv_path,
-        index=False,
-        encoding="utf-8-sig",
-    )
-
     logger.info("原始 JSON 已儲存：%s", json_path)
-    logger.info("CSV 已儲存：%s", csv_path)
 
-    return json_path, csv_path
+    return json_path
 
 
 def main() -> int:
@@ -676,8 +655,8 @@ def main() -> int:
         records = extract_records(payload)
 
         logger.info(
-            "成功取得資料：%,d 筆",
-            len(records),
+            "成功取得資料：%s 筆",
+            f"{len(records):,}",
         )
 
         resolved_fields = resolve_fields(records)
@@ -705,9 +684,8 @@ def main() -> int:
             logger=logger,
         )
 
-        json_path, csv_path = save_results(
+        json_path = save_results(
             payload=payload,
-            records=records,
             collected_at=collected_at,
             logger=logger,
         )
@@ -715,7 +693,6 @@ def main() -> int:
         print("\nAPI 擷取測試完成。")
         print(f"資料筆數：{len(records):,}")
         print(f"JSON 檔案：{json_path}")
-        print(f"CSV 檔案：{csv_path}")
         print(
             f"擷取時間 UTC：{collected_at.isoformat()}"
         )

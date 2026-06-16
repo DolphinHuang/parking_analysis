@@ -2,11 +2,11 @@
 
 逢甲商圈周邊路邊停車壓力分析專題的資料蒐集程式。
 
-目前專案處於第一階段，目標是呼叫臺中市政府資料開放平臺的「臺中市路邊剩餘車位」API，確認 JSON 結構、實際欄位名稱、資料筆數、座標格式及車格狀態，並保存每次擷取的原始資料。
+目前專案已完成臺中市路邊剩餘車位 API 擷取、原始資料保存，以及寫入 PostgreSQL / TimescaleDB 的本機 collector 流程。後續目標是加入逢甲大學周邊 1 公里篩選、定時蒐集與 Azure VM 部署。
 
 ## 一、目前階段
 
-目前只完成下列工作：
+目前已完成下列工作：
 
 1. 呼叫臺中市政府停車資料 API。
 2. 檢查 HTTP 狀態碼。
@@ -16,22 +16,22 @@
 6. 檢查座標格式。
 7. 驗證 `status` 是否為 `0`、`1` 或 `2`。
 8. 加入資料擷取時間。
-9. 保存原始 JSON 與 CSV。
+9. 保存原始 JSON。
 10. 記錄程式執行日誌。
+11. 建立 TimescaleDB schema。
+12. 將資料寫入 `parking_status_raw`。
+13. 提供 `Dockerfile` 與 `docker-compose.yml`。
 
 目前尚未加入：
 
 * 逢甲大學周邊 1 公里篩選
 * Haversine distance
-* PostgreSQL
-* TimescaleDB
 * 每 10 分鐘排程
-* Docker
 * Azure VM
 * Grafana
 * Streamlit
 
-上述功能會在 API 欄位確認後逐步加入。
+上述功能會在本機資料庫流程確認後逐步加入。
 
 ## 二、資料來源
 
@@ -47,26 +47,32 @@
 https://opendata.taichung.gov.tw/search/1fd63eca-063d-4e4e-9443-1d66bf3f2051
 ```
 
-請從資料集頁面開啟 JSON 資源，並將實際 API 網址填入 `.env`。
+目前使用的 JSON API：
+
+```text
+https://newdatacenter.taichung.gov.tw/api/v1/no-auth/resource.download?rid=1744bc00-cd16-48f3-9632-309f364662bb
+```
+
+請將實際 API 網址填入 `.env` 的 `TAICHUNG_PARKING_API_URL`。
 
 預期主要欄位包括：
 
-| 欄位               | 說明    |
-| ---------------- | ----- |
-| `Section_ID`     | 路段編號  |
-| `PS_ID`          | 停車格編號 |
-| `PS_type`        | 停車格類型 |
-| `PS_Lat` 或 `Lat` | 緯度    |
-| `PS_Lng` 或 `Lng` | 經度    |
-| `status`         | 停車格狀態 |
+| 欄位 | 說明 |
+| --- | --- |
+| `Section_ID` | 路段編號 |
+| `PS_ID` | 停車格編號 |
+| `PS_type` | 停車格類型 |
+| `PS_Lat` 或 `Lat` | 緯度 |
+| `PS_Lng` 或 `Lng` | 經度 |
+| `status` | 停車格狀態 |
 
 `status` 定義：
 
-| status | 說明       |
-| -----: | -------- |
-|      0 | 車格沒有車    |
-|      1 | 車格有車     |
-|      2 | 感測器異常或故障 |
+| status | 說明 |
+| ---: | --- |
+| 0 | 車格沒有車 |
+| 1 | 車格有車 |
+| 2 | 感測器異常或故障 |
 
 實際欄位名稱必須以 API 執行當下的 JSON 回傳結果為準。
 
@@ -79,6 +85,8 @@ https://opendata.taichung.gov.tw/search/1fd63eca-063d-4e4e-9443-1d66bf3f2051
 * requests
 * python-dotenv
 * pandas
+* psycopg
+* PostgreSQL / TimescaleDB
 
 確認 uv 已安裝：
 
@@ -105,6 +113,7 @@ uv python pin 3.12
 
 ```powershell
 mkdir collector
+mkdir sql
 ```
 
 若 `uv init` 自動建立了根目錄的 `main.py`，可將其移除：
@@ -116,7 +125,7 @@ Remove-Item main.py
 加入專案套件：
 
 ```powershell
-uv add requests python-dotenv pandas
+uv add requests python-dotenv pandas "psycopg[binary]"
 ```
 
 `uv` 會自動建立：
@@ -131,39 +140,29 @@ uv.lock
 
 ## 五、專案結構
 
-程式第一次執行前：
+目前專案結構：
 
 ```text
 parking_analysis/
 ├── collector/
-│   └── api_test.py
-├── .env
-├── .env.example
-├── .gitignore
-├── .python-version
-├── pyproject.toml
-├── uv.lock
-└── README.md
-```
-
-`data/` 與 `logs/` 不需要手動建立。
-
-程式執行後會自動建立：
-
-```text
-parking_analysis/
-├── collector/
-│   └── api_test.py
+│   ├── __init__.py
+│   ├── api_test.py
+│   ├── db.py
+│   ├── main.py
+│   └── transform.py
+├── sql/
+│   └── schema.sql
 ├── data/
 │   └── raw/
-│       ├── taichung_parking_YYYYMMDDTHHMMSSZ.json
-│       └── taichung_parking_YYYYMMDDTHHMMSSZ.csv
+│       └── taichung_parking_YYYYMMDDTHHMMSSZ.json
 ├── logs/
 │   └── api_test.log
 ├── .env
 ├── .env.example
 ├── .gitignore
 ├── .python-version
+├── Dockerfile
+├── docker-compose.yml
 ├── pyproject.toml
 ├── uv.lock
 └── README.md
@@ -171,19 +170,28 @@ parking_analysis/
 
 其中：
 
-* `logs/` 在程式啟動時建立。
-* `data/raw/` 只有在 API 成功回傳並完成解析後才會建立。
-* API 執行失敗時，不會產生假的 JSON 或 CSV。
+* `collector/api_test.py` 用於 API 驗證與欄位檢查。
+* `collector/main.py` 是正式 collector 入口。
+* `sql/schema.sql` 定義 TimescaleDB schema。
+* `data/raw/` 保存每次抓下來的原始 JSON。
+* `logs/` 保存執行日誌。
 
 ## 六、環境變數設定
 
 建立 `.env.example`：
 
 ```env
-TAICHUNG_PARKING_API_URL=請填入臺中市政府資料集的JSON_API網址
+TAICHUNG_PARKING_API_URL=https://newdatacenter.taichung.gov.tw/api/v1/no-auth/resource.download?rid=1744bc00-cd16-48f3-9632-309f364662bb
 
 REQUEST_CONNECT_TIMEOUT=10
 REQUEST_READ_TIMEOUT=60
+
+DB_HOST=localhost
+DB_PORT=5432
+DB_NAME=parking_analysis
+DB_USER=parking_user
+DB_PASSWORD=parking_password
+DB_SSLMODE=disable
 ```
 
 複製成 `.env`：
@@ -192,24 +200,25 @@ REQUEST_READ_TIMEOUT=60
 Copy-Item .env.example .env
 ```
 
-接著編輯 `.env`：
-
-```env
-TAICHUNG_PARKING_API_URL= https://newdatacenter.taichung.gov.tw/api/v1/no-auth/resource.download?rid=1744bc00-cd16-48f3-9632-309f364662bb
-
-REQUEST_CONNECT_TIMEOUT=10
-REQUEST_READ_TIMEOUT=60
-```
-
 環境變數說明：
 
-| 變數                         | 說明                |
-| -------------------------- | ----------------- |
+| 變數 | 說明 |
+| --- | --- |
 | `TAICHUNG_PARKING_API_URL` | 臺中市政府 JSON API 網址 |
-| `REQUEST_CONNECT_TIMEOUT`  | 建立連線的逾時秒數         |
-| `REQUEST_READ_TIMEOUT`     | 等待 API 回應內容的逾時秒數  |
+| `REQUEST_CONNECT_TIMEOUT` | 建立連線的逾時秒數 |
+| `REQUEST_READ_TIMEOUT` | 等待 API 回應內容的逾時秒數 |
+| `DB_HOST` | PostgreSQL / TimescaleDB 主機 |
+| `DB_PORT` | PostgreSQL / TimescaleDB 連線埠 |
+| `DB_NAME` | 資料庫名稱 |
+| `DB_USER` | 資料庫使用者 |
+| `DB_PASSWORD` | 資料庫密碼 |
+| `DB_SSLMODE` | PostgreSQL SSL 模式 |
 
 `.env` 不應提交到 Git。
+
+本機執行 `uv run python -m collector.main` 時使用 `.env`。
+
+Docker 執行 `collector` 時使用 `.env.docker`，其中 `DB_HOST` 必須是 `timescaledb`，不能是 `localhost`。
 
 ## 七、安裝相依套件
 
@@ -221,7 +230,7 @@ uv sync
 
 `uv sync` 會依照 `pyproject.toml` 與 `uv.lock` 建立環境並安裝相同版本的套件。
 
-## 八、執行 API 擷取程式
+## 八、執行 API 驗證腳本
 
 確認目前位於專案根目錄：
 
@@ -235,23 +244,46 @@ parking_analysis/
 uv run python collector\api_test.py
 ```
 
-不需要手動啟用 `.venv`。
+此腳本用途：
 
-查看程式結束碼：
+1. 驗證 API 是否可用。
+2. 檢查 JSON 結構與欄位名稱。
+3. 輸出 raw JSON。
+4. 確認座標與 `status` 格式。
+
+## 九、執行正式 Collector
+
+先啟動 TimescaleDB：
 
 ```powershell
-echo $LASTEXITCODE
+docker compose up -d timescaledb
 ```
 
-成功時應為：
+再執行 collector：
 
-```text
-0
+```powershell
+uv run python -m collector.main
 ```
 
-失敗時應為非 `0`。
+此模式會讀取專案根目錄的 `.env`。
 
-## 九、程式執行流程
+或直接透過容器執行：
+
+```powershell
+docker compose up --build collector
+```
+
+此模式會讀取 `docker-compose.yml` 中指定的 `.env.docker`。
+
+正式 collector 會完成以下工作：
+
+1. 呼叫 API。
+2. 驗證欄位與座標。
+3. 保存 raw JSON。
+4. 建立 `parking_status_raw` schema。
+5. 將本次資料寫入 TimescaleDB。
+
+## 十、程式執行流程
 
 ```text
 讀取 .env
@@ -270,64 +302,37 @@ echo $LASTEXITCODE
     ↓
 檢查座標與 status
     ↓
-顯示資料範例
-    ↓
 保存原始 JSON
     ↓
-加入 collected_at_utc 並保存 CSV
+欄位標準化
+    ↓
+建立 schema 並寫入 TimescaleDB
 ```
 
-## 十、預期終端機輸出
+## 十一、預期終端機輸出
 
 成功時應看到類似內容：
 
 ```text
 開始呼叫臺中市政府停車資料 API
 HTTP 狀態碼：200
-Content-Type：application/json
 JSON 根節點型態：list
 成功取得資料：N 筆
+成功寫入資料庫：N 筆
 ```
 
-接著會列出實際欄位：
+實際欄位可能顯示：
 
 ```text
-辨識到的實際欄位：
-
 section_id   -> Section_ID
 ps_id        -> PS_ID
 ps_type      -> PS_type
-latitude     -> PS_Lat
-longitude    -> PS_Lng
+latitude     -> Lat
+longitude    -> Lng
 status       -> status
 ```
 
-實際座標欄位也可能是：
-
-```text
-latitude     -> Lat
-longitude    -> Lng
-```
-
-程式還會顯示：
-
-```text
-欄位名稱
-出現筆數
-非空值筆數
-Python 型態
-範例值
-```
-
-以及：
-
-```text
-有效座標：N / N
-status 為 0、1、2：N / N
-本次回應中重複的 PS_ID：N 筆
-```
-
-## 十一、輸出資料
+## 十二、輸出資料
 
 ### 原始 JSON
 
@@ -338,28 +343,6 @@ data/raw/taichung_parking_YYYYMMDDTHHMMSSZ.json
 ```
 
 此檔案保存 API 的原始 JSON 結構，不修改欄位名稱或資料內容。
-
-### CSV
-
-路徑：
-
-```text
-data/raw/taichung_parking_YYYYMMDDTHHMMSSZ.csv
-```
-
-CSV 會在第一欄加入：
-
-```text
-collected_at_utc
-```
-
-此時間使用 UTC，範例如下：
-
-```text
-2026-06-16T10:30:00+00:00
-```
-
-後續顯示給使用者時，再轉換成臺灣時區 `Asia/Taipei`。
 
 ### Log
 
@@ -379,14 +362,35 @@ Log 會記錄：
 * 座標驗證結果
 * status 驗證結果
 * 輸出檔案位置
+* 資料庫寫入筆數
 * 錯誤與例外訊息
 
-## 十二、目前驗收標準
+### TimescaleDB Table
 
-第一階段完成前，需確認：
+正式 collector 會建立並寫入：
+
+```text
+parking_status_raw
+```
+
+主要欄位：
+
+* `collected_at_utc`
+* `section_id`
+* `ps_id`
+* `ps_type`
+* `lat`
+* `lng`
+* `status`
+* `county_code`
+* `agency_codes`
+
+## 十三、目前驗收標準
+
+本階段完成前，需確認：
 
 * [ ] `uv sync` 執行成功
-* [ ] `.env` 已設定 API 網址
+* [ ] `.env` 已設定 API 網址與 DB 連線資訊
 * [ ] API 回傳 HTTP 200
 * [ ] JSON 可以正常解析
 * [ ] 資料筆數大於 0
@@ -399,13 +403,19 @@ Log 會記錄：
 * [ ] 座標可以轉成數值
 * [ ] `status` 可驗證為 0、1、2
 * [ ] JSON 成功保存
-* [ ] CSV 成功保存
 * [ ] Log 成功產生
+* [ ] `parking_status_raw` 成功建立
+* [ ] 資料成功寫入 TimescaleDB
 * [ ] 程式成功時結束碼為 0
 
-資料筆數可能隨政府資料更新而改變，不應將某個固定筆數當成唯一成功標準。
+下列功能仍未完成，不應誤判為已驗收：
 
-## 十三、常見錯誤
+* [ ] 逢甲大學周邊 1 公里篩選
+* [ ] Haversine distance
+* [ ] 每 10 分鐘自動蒐集
+* [ ] Azure VM 長期部署
+
+## 十四、常見錯誤
 
 ### 1. 找不到 uv
 
@@ -421,8 +431,6 @@ uv is not recognized
 uv --version
 ```
 
-若尚未安裝 uv，需先完成 uv 安裝，再重新開啟 PowerShell。
-
 ### 2. 找不到 `.env`
 
 錯誤：
@@ -437,10 +445,14 @@ uv --version
 .env
 ```
 
-並確認內容包括：
+並確認內容至少包括：
 
 ```env
 TAICHUNG_PARKING_API_URL=https://實際API網址
+DB_HOST=localhost
+DB_NAME=parking_analysis
+DB_USER=parking_user
+DB_PASSWORD=你的密碼
 ```
 
 ### 3. HTTP 400 或 404
@@ -451,28 +463,26 @@ TAICHUNG_PARKING_API_URL=https://實際API網址
 * 資源識別碼失效
 * 複製到資料集頁面網址，而不是 JSON API 網址
 
-處理方式：
+### 4. 無法連線資料庫
 
-1. 開啟官方資料集頁面。
-2. 找到 JSON 資源。
-3. 複製新的 API 網址。
-4. 更新 `.env`。
-5. 重新執行程式。
+可能原因：
+
+* TimescaleDB 尚未啟動
+* `.env` 的 `DB_HOST`、`DB_PORT`、`DB_NAME`、`DB_USER`、`DB_PASSWORD` 錯誤
+
+先確認容器是否啟動：
 
 ```powershell
-uv run python collector\api_test.py
+docker compose ps
 ```
 
-### 4. API 連線逾時
+若只想先啟動資料庫：
 
-錯誤可能包括：
-
-```text
-ConnectTimeout
-ReadTimeout
+```powershell
+docker compose up -d timescaledb
 ```
 
-先確認本機網路正常，再重新執行。
+### 5. API 連線逾時
 
 若政府 API 回應較慢，可調高：
 
@@ -480,71 +490,22 @@ ReadTimeout
 REQUEST_READ_TIMEOUT=120
 ```
 
-不建議移除 timeout，否則程式可能長時間卡住。
-
-### 5. 回傳內容不是 JSON
-
-錯誤：
-
-```text
-API 回傳內容不是有效 JSON
-```
+### 6. 回傳內容不是 JSON
 
 可能原因：
 
 * API 回傳維護頁面
 * API 回傳 HTML 錯誤頁
 * API 資源網址失效
-* 政府資料平臺暫時異常
 
-程式會顯示回傳內容前 500 字，供排查使用。
+### 7. 找不到座標欄位
 
-### 6. 找不到座標欄位
+若欄位真的變動，需同步更新：
 
-可能顯示：
+* `collector/transform.py`
+* `sql/schema.sql`
 
-```text
-latitude -> 找不到
-longitude -> 找不到
-```
-
-先查看程式列出的完整欄位名稱，確認 API 是否更改欄位。
-
-座標可能使用：
-
-```text
-PS_Lat
-PS_Lng
-```
-
-或：
-
-```text
-Lat
-Lng
-```
-
-在確認實際欄位前，不應直接建立正式資料庫 Schema。
-
-## 十四、Git 注意事項
-
-`.gitignore` 建議內容：
-
-```gitignore
-.venv/
-.env
-
-__pycache__/
-*.py[cod]
-
-data/
-logs/
-
-.vscode/
-.idea/
-.DS_Store
-Thumbs.db
-```
+## 十五、Git 注意事項
 
 應提交：
 
@@ -553,6 +514,12 @@ pyproject.toml
 uv.lock
 .env.example
 collector/api_test.py
+collector/main.py
+collector/db.py
+collector/transform.py
+sql/schema.sql
+Dockerfile
+docker-compose.yml
 README.md
 ```
 
@@ -567,45 +534,23 @@ logs/
 
 `uv.lock` 應保留在 Git 中，確保本機、Docker 與 Azure VM 使用相同的套件版本。
 
-## 十五、下一階段
+## 十六、下一階段
 
-API 擷取測試成功後，下一階段會將目前的單一測試程式拆分為：
+目前已拆分為：
 
 ```text
 collector/
+├── api_test.py
+├── db.py
 ├── main.py
-├── api_client.py
-├── cleaner.py
-├── geo.py
-└── logger.py
+└── transform.py
 ```
 
-後續流程：
+下一步會依序加入：
 
-```text
-API 資料
-    ↓
-欄位標準化
-    ↓
-座標轉換
-    ↓
-status 驗證
-    ↓
-加入 collected_at
-    ↓
-計算與逢甲大學主要入口的距離
-    ↓
-保留 1 公里內停車格
-    ↓
-寫入 PostgreSQL 與 TimescaleDB
-```
-
-確認本機流程成功後，才會依序加入：
-
-1. Collector Docker Container
-2. TimescaleDB Container
-3. Docker Compose
-4. 每 10 分鐘自動蒐集
-5. Azure VM 部署
-6. Grafana 儀表板
-7. Streamlit 成果展示頁面
+1. 與逢甲大學主要入口的距離計算
+2. 保留 1 公里內停車格
+3. 每 10 分鐘自動蒐集
+4. Azure VM 部署
+5. Grafana 儀表板
+6. Streamlit 成果展示頁面
